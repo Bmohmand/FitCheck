@@ -15,11 +15,11 @@ Quick start (for Zihan's FastAPI):
     # Search
     query_vec = await pipeline.embed_query("cold weather survival gear")
 
-    # Synthesize (after Pinecone returns results)
+    # Synthesize (after Supabase returns results)
     plan = await pipeline.synthesize_results(query, retrieved_items)
 
 Env vars needed:
-    OPENAI_API_KEY, VOYAGE_API_KEY (or GOOGLE_PROJECT_ID), PINECONE_API_KEY
+    OPENAI_API_KEY, VOYAGE_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
 """
 
 from .pipeline import NexusPipeline

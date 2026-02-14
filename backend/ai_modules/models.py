@@ -13,7 +13,7 @@ import uuid
 class ItemContext(BaseModel):
     """
     Structured output from the Vision LLM (Step 1 of the pipeline).
-    This is the semantic profile GPT-4o extracts from a raw image.
+    This is the semantic profile GPT-5 extracts from a raw image.
     """
     name: str = Field(description="Human-readable item name, e.g. 'Gore-Tex Rain Jacket'")
     inferred_category: str = Field(description="Primary category: clothing, medical, tech, camping, food, misc")
@@ -31,7 +31,7 @@ class ItemContext(BaseModel):
 class EmbeddingResult(BaseModel):
     """
     Output of the embedding engine (Step 2). This is what gets
-    sent to Zihan to upsert into Pinecone.
+    sent to Zihan to upsert into Supabase.
     """
     item_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     vector: list[float] = Field(description="The high-dimensional embedding vector")
@@ -48,7 +48,7 @@ class SearchQuery(BaseModel):
 
 
 class RetrievedItem(BaseModel):
-    """A single item returned from Pinecone vector search."""
+    """A single item returned from Supabase vector search."""
     item_id: str
     score: float = Field(description="Cosine similarity score (0-1)")
     image_url: Optional[str] = None

@@ -3,7 +3,7 @@ nexus_ai/mission_synthesizer.py
 ================================
 Step 3: Post-retrieval intelligence.
 
-After Pinecone returns the top-k nearest items, this module passes them
+After Supabase returns the top-k nearest items, this module passes them
 to an LLM to curate the final packing manifest. The LLM:
   - Filters out dangerous/inappropriate items (the "cotton in cold" rejection)
   - Explains WHY each item was selected (for the demo)
@@ -17,7 +17,7 @@ import json
 import logging
 from openai import AsyncOpenAI
 
-from .config import OPENAI_API_KEY, SYNTHESIS_MODEL, SYNTHESIS_MAX_TOKENS, SYNTHESIS_TEMPERATURE
+from .config import OPENAI_API_KEY, SYNTHESIS_MODEL, SYNTHESIS_MAX_TOKENS, REASONING_EFFORT_SYNTHESIS
 from .models import RetrievedItem, MissionPlan
 
 logger = logging.getLogger("nexus.synthesizer")
@@ -84,7 +84,7 @@ class MissionSynthesizer:
 
         Args:
             query: The original natural language mission query
-            retrieved_items: Items returned by Pinecone, already ranked by similarity
+            retrieved_items: Items returned by Supabase, already ranked by similarity
 
         Returns:
             MissionPlan with selections, rejections, and reasoning
@@ -114,7 +114,7 @@ class MissionSynthesizer:
             model=SYNTHESIS_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=SYNTHESIS_MAX_TOKENS,
-            temperature=SYNTHESIS_TEMPERATURE,
+            reasoning_effort=REASONING_EFFORT_SYNTHESIS,
             response_format={"type": "json_object"},
         )
 

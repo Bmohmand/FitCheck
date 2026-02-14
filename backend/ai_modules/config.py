@@ -5,9 +5,8 @@ Centralized configuration. All API keys and model choices live here.
 Uses environment variables so nothing is hardcoded.
 
 Required env vars:
-  OPENAI_API_KEY        - For GPT-4o Vision context extraction
-  VOYAGE_API_KEY        - For Voyage multimodal embeddings (option A)
-  GOOGLE_PROJECT_ID     - For Vertex AI embeddings (option B)
+  OPENAI_API_KEY        - For GPT-5 Vision context extraction
+  VOYAGE_API_KEY        - For Voyage multimodal embeddings
   SUPABASE_URL          - Supabase project URL
   SUPABASE_SERVICE_KEY  - Supabase service role key (NOT the anon key)
 """
@@ -18,7 +17,6 @@ from enum import Enum
 
 class EmbeddingProvider(str, Enum):
     VOYAGE = "voyage"
-    VERTEX = "vertex"
     CLIP_LOCAL = "clip_local"  # Fallback for offline dev / hackathon wifi issues
 
 
@@ -27,7 +25,6 @@ class EmbeddingProvider(str, Enum):
 # ---------------------------------------------------------------------------
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 VOYAGE_API_KEY: str = os.getenv("VOYAGE_API_KEY", "")
-GOOGLE_PROJECT_ID: str = os.getenv("GOOGLE_PROJECT_ID", "")
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
 
@@ -35,34 +32,33 @@ SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
 # Model Configuration
 # ---------------------------------------------------------------------------
 # Vision model for context extraction
-VISION_MODEL: str = "gpt-4o"
+VISION_MODEL: str = "gpt-5"
 
 # Which embedding provider to use
 EMBEDDING_PROVIDER: EmbeddingProvider = EmbeddingProvider(
     os.getenv("NEXUS_EMBEDDING_PROVIDER", "voyage")
 )
 
-# Embedding dimensions (must match Pinecone index dimension)
+# Embedding dimensions (must match Supabase vector column dimension)
 EMBEDDING_DIMENSIONS: dict[EmbeddingProvider, int] = {
-    EmbeddingProvider.VOYAGE: 1024,    # voyage-multimodal-3
-    EmbeddingProvider.VERTEX: 1408,    # multimodalembedding@001
-    EmbeddingProvider.CLIP_LOCAL: 512, # ViT-B-32
+    EmbeddingProvider.VOYAGE: 1024,      # voyage-multimodal-3.5 (default dim)
+    EmbeddingProvider.CLIP_LOCAL: 512,    # ViT-B-32
 }
 
 # Voyage model name
-VOYAGE_MODEL: str = "voyage-multimodal-3"
-
-# Vertex AI model name
-VERTEX_MODEL: str = "multimodalembedding@001"
-VERTEX_LOCATION: str = "us-central1"
+VOYAGE_MODEL: str = "voyage-multimodal-3.5"
 
 # ---------------------------------------------------------------------------
 # LLM Settings
 # ---------------------------------------------------------------------------
 # Synthesis model (for final mission plan generation)
-SYNTHESIS_MODEL: str = "gpt-4o"
+SYNTHESIS_MODEL: str = "gpt-5"
 SYNTHESIS_MAX_TOKENS: int = 2000
-SYNTHESIS_TEMPERATURE: float = 0.4  # Lower = more deterministic packing advice
+
+# GPT-5 reasoning effort per pipeline stage (minimal, low, medium, high)
+# Higher effort = better accuracy, more tokens, higher cost
+REASONING_EFFORT_EXTRACTION: str = "medium"   # Context extraction: worth thinking about materials/safety
+REASONING_EFFORT_SYNTHESIS: str = "high"      # Mission plan: needs careful cross-domain reasoning
 
 # ---------------------------------------------------------------------------
 # Search Defaults
@@ -83,8 +79,6 @@ def validate_config() -> list[str]:
         warnings.append("OPENAI_API_KEY not set — context extraction will fail")
     if EMBEDDING_PROVIDER == EmbeddingProvider.VOYAGE and not VOYAGE_API_KEY:
         warnings.append("VOYAGE_API_KEY not set — switch provider or set key")
-    if EMBEDDING_PROVIDER == EmbeddingProvider.VERTEX and not GOOGLE_PROJECT_ID:
-        warnings.append("GOOGLE_PROJECT_ID not set — Vertex AI will fail")
     if not SUPABASE_URL:
         warnings.append("SUPABASE_URL not set — database ops will fail")
     if not SUPABASE_SERVICE_KEY:

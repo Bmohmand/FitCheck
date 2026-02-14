@@ -19,7 +19,7 @@ Usage in Zihan's FastAPI:
     plan = await pipeline.search("48-hour cold climate medical mission")
 
 Env vars needed:
-    OPENAI_API_KEY, VOYAGE_API_KEY (or GOOGLE_PROJECT_ID),
+    OPENAI_API_KEY, VOYAGE_API_KEY,
     SUPABASE_URL, SUPABASE_SERVICE_KEY
 """
 
@@ -88,7 +88,7 @@ class NexusPipeline:
         t0 = time.time()
 
         # Step 1: Extract semantic context via Vision LLM
-        logger.info("Step 1/3: Extracting context via GPT-4o Vision...")
+        logger.info("Step 1/3: Extracting context via GPT-5 Vision...")
         context: ItemContext = await self.extractor.extract(image_source)
         t1 = time.time()
         logger.info(f"  Context extracted in {t1 - t0:.1f}s: {context.name} [{context.inferred_category}]")

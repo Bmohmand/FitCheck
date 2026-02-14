@@ -5,11 +5,11 @@ Step 2 of the 2-step AI pipeline.
 
 Takes the raw image + the extracted ItemContext from Step 1 and produces
 a unified multimodal embedding vector. This vector is what gets stored
-in Pinecone and searched against.
+in Supabase and searched against.
 
-Supports 3 providers:
-  - Voyage AI (voyage-multimodal-3) — recommended, best multimodal quality
-  - Google Vertex AI (multimodalembedding@001) — alternative
+Supports 2 providers:
+  - Voyage AI (voyage-multimodal-3.5) — state-of-the-art multimodal embeddings
+    with interleaved text+image support and Matryoshka flexible dimensions
   - Local CLIP (ViT-B-32) — offline fallback for dev/bad wifi
 
 Called by: pipeline.py
@@ -28,9 +28,6 @@ from .config import (
     EmbeddingProvider,
     VOYAGE_API_KEY,
     VOYAGE_MODEL,
-    GOOGLE_PROJECT_ID,
-    VERTEX_MODEL,
-    VERTEX_LOCATION,
     get_embedding_dim,
 )
 from .models import ItemContext
@@ -65,29 +62,35 @@ class BaseEmbedder(ABC):
 # ---------------------------------------------------------------------------
 class VoyageEmbedder(BaseEmbedder):
     """
-    Uses Voyage AI's voyage-multimodal-3 model.
-    Natively handles both image and text in a single embedding call.
+    Uses Voyage AI's voyage-multimodal-3.5 model.
+
+    Key advantages over the previous multimodal-3:
+      - Higher retrieval accuracy (4.56% over Cohere Embed v4)
+      - Matryoshka embeddings: flexible dimensions (2048, 1024, 512, 256)
+      - Video frame support (not used here, but future-proof)
+      - Single unified transformer backbone (no modality gap like CLIP)
+
     Docs: https://docs.voyageai.com/docs/multimodal-embeddings
     """
 
-    def __init__(self, api_key: str = VOYAGE_API_KEY):
+    def __init__(self, api_key: str = VOYAGE_API_KEY, output_dimension: int = 1024):
         if not api_key:
             raise ValueError("VOYAGE_API_KEY required")
         import voyageai
         self.client = voyageai.AsyncClient(api_key=api_key)
+        self._dimension = output_dimension
 
     @property
     def dimension(self) -> int:
-        return 1024
+        return self._dimension
 
     async def embed_item(self, image_source: str | bytes, context: ItemContext) -> list[float]:
         """
-        Voyage multimodal-3 accepts interleaved content.
-        We pass both the image AND the extracted text profile so the
-        embedding captures visual + semantic information.
+        Voyage multimodal-3.5 accepts interleaved content through a
+        single transformer backbone. We pass both the image AND the
+        extracted text profile so the embedding captures visual +
+        semantic information without modality gap.
         """
-        import voyageai
-
         # Build the rich text context that supplements the image
         context_text = self._build_context_text(context)
 
@@ -101,7 +104,8 @@ class VoyageEmbedder(BaseEmbedder):
         result = await self.client.multimodal_embed(
             inputs=inputs,
             model=VOYAGE_MODEL,
-            input_type="document",  # "document" for items being stored
+            input_type="document",           # "document" for items being stored
+            output_dimension=self._dimension, # Matryoshka: 2048, 1024, 512, or 256
         )
         return result.embeddings[0]
 
@@ -110,7 +114,8 @@ class VoyageEmbedder(BaseEmbedder):
         result = await self.client.multimodal_embed(
             inputs=[[text]],
             model=VOYAGE_MODEL,
-            input_type="query",  # "query" for search queries
+            input_type="query",              # "query" for search queries
+            output_dimension=self._dimension,
         )
         return result.embeddings[0]
 
@@ -136,78 +141,13 @@ class VoyageEmbedder(BaseEmbedder):
 
 
 # ---------------------------------------------------------------------------
-# Provider 2: Google Vertex AI
-# ---------------------------------------------------------------------------
-class VertexEmbedder(BaseEmbedder):
-    """
-    Uses Google Cloud Vertex AI multimodalembedding@001.
-    Requires GOOGLE_PROJECT_ID and gcloud auth.
-    """
-
-    def __init__(self):
-        if not GOOGLE_PROJECT_ID:
-            raise ValueError("GOOGLE_PROJECT_ID required for Vertex AI")
-        from google.cloud import aiplatform
-        aiplatform.init(project=GOOGLE_PROJECT_ID, location=VERTEX_LOCATION)
-
-    @property
-    def dimension(self) -> int:
-        return 1408
-
-    async def embed_item(self, image_source: str | bytes, context: ItemContext) -> list[float]:
-        """Vertex AI accepts image + contextual text."""
-        import asyncio
-        from vertexai.vision_models import MultiModalEmbeddingModel, Image
-
-        model = MultiModalEmbeddingModel.from_pretrained(VERTEX_MODEL)
-
-        # Load image
-        if isinstance(image_source, bytes):
-            image = Image(image_bytes=image_source)
-        elif isinstance(image_source, str) and image_source.startswith("http"):
-            # Download first
-            import httpx
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(image_source)
-                image = Image(image_bytes=resp.content)
-        else:
-            image = Image.load_from_file(image_source)
-
-        context_text = VoyageEmbedder._build_context_text(context)
-
-        # Vertex API is sync — run in executor
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: model.get_embeddings(
-                image=image,
-                contextual_text=context_text,
-                dimension=self.dimension,
-            ),
-        )
-        return list(result.image_embedding)
-
-    async def embed_text(self, text: str) -> list[float]:
-        """Embed text query via Vertex AI."""
-        import asyncio
-        from vertexai.vision_models import MultiModalEmbeddingModel
-
-        model = MultiModalEmbeddingModel.from_pretrained(VERTEX_MODEL)
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: model.get_embeddings(text=text, dimension=self.dimension),
-        )
-        return list(result.text_embedding)
-
-
-# ---------------------------------------------------------------------------
-# Provider 3: Local CLIP (offline fallback)
+# Provider 2: Local CLIP (offline fallback)
 # ---------------------------------------------------------------------------
 class CLIPEmbedder(BaseEmbedder):
     """
     Local CLIP ViT-B-32 fallback. No API keys needed.
-    Quality is lower than Voyage/Vertex but works without internet.
+    Quality is significantly lower than Voyage but works without internet.
+    Use only for local dev or if hackathon wifi dies.
     """
 
     def __init__(self):
@@ -284,11 +224,8 @@ def create_embedder(provider: EmbeddingProvider = EMBEDDING_PROVIDER) -> BaseEmb
     """
     match provider:
         case EmbeddingProvider.VOYAGE:
-            logger.info("Using Voyage AI embeddings (voyage-multimodal-3)")
+            logger.info("Using Voyage AI embeddings (voyage-multimodal-3.5)")
             return VoyageEmbedder()
-        case EmbeddingProvider.VERTEX:
-            logger.info("Using Vertex AI embeddings (multimodalembedding@001)")
-            return VertexEmbedder()
         case EmbeddingProvider.CLIP_LOCAL:
             logger.info("Using local CLIP embeddings (ViT-B-32) — offline fallback")
             return CLIPEmbedder()

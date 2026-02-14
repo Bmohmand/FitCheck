@@ -3,7 +3,7 @@ nexus_ai/context_extractor.py
 ==============================
 Step 1 of the 2-step AI pipeline.
 
-Takes a raw image and passes it to GPT-4o Vision to extract a rich
+Takes a raw image and passes it to GPT-5 Vision to extract a rich
 semantic profile (ItemContext). This is critical because raw pixel
 embeddings alone don't capture things like thermal limits, medical
 applications, or material safety — a Vision LLM does.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-from .config import OPENAI_API_KEY, VISION_MODEL
+from .config import OPENAI_API_KEY, VISION_MODEL, REASONING_EFFORT_EXTRACTION
 from .models import ItemContext
 
 logger = logging.getLogger("nexus.extractor")
@@ -35,8 +35,6 @@ Your goal is to analyze an image of a physical object and extract highly accurat
 Analyze the image thoroughly and return ONLY a valid JSON object matching the exact schema below. Do not use markdown blocks (e.g., ```json) or add conversational filler.
 
 {
-  "analysis_scratchpad": "Think step-by-step here. What visual clues do you see? What is the texture, branding, or shape? Deduce the material and use-case before filling out the rest of the fields.",
-  "name": "Human-readable name of the item",
   "inferred_category": "One of: clothing, medical, tech, camping, food, misc",
   "primary_material": "Dominant material (e.g., 'Gore-Tex nylon', 'stainless steel', 'cotton')",
   "weight_estimate": "One of: ultralight, light, medium, heavy",
@@ -60,7 +58,7 @@ IMPORTANT RULES:
 
 
 class ContextExtractor:
-    """Extracts structured semantic context from item images via GPT-4o Vision."""
+    """Extracts structured semantic context from item images via GPT-5 Vision."""
 
     def __init__(self, api_key: str = OPENAI_API_KEY):
         if not api_key:
@@ -93,7 +91,7 @@ class ContextExtractor:
                 },
             ],
             max_tokens=800,
-            temperature=0.1,  # Low temp for consistent structured output
+            reasoning_effort=REASONING_EFFORT_EXTRACTION,
             response_format={"type": "json_object"},
         )
 

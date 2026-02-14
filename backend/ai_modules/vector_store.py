@@ -1,10 +1,10 @@
 """
 nexus_ai/vector_store.py
 =========================
-Supabase pgvector integration. Replaces Pinecone as the vector database.
+Supabase pgvector integration. The vector database for Nexus.
 
-Advantages over Pinecone for this hackathon:
-  - Zihan already has Supabase for auth — one fewer service to manage
+Advantages for this hackathon:
+  - Zihan already has Supabase for auth — one service to manage
   - Free tier is generous (500MB, plenty for 50-200 items)
   - Full SQL power for metadata filtering alongside vector search
   - No separate API key / dashboard to juggle at 3am
