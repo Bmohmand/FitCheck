@@ -33,6 +33,13 @@ from .context_extractor import ContextExtractor
 from .embedding_engine import create_embedder, BaseEmbedder
 from .mission_synthesizer import MissionSynthesizer
 from .vector_store import SupabaseVectorStore
+from .knapsack_optimizer import (
+    KnapsackOptimizer,
+    PackingConstraints,
+    PackingResult,
+    PackableItem,
+    CONSTRAINT_PRESETS,
+)
 
 logger = logging.getLogger("nexus.pipeline")
 
@@ -56,6 +63,7 @@ class NexusPipeline:
         self.embedder: BaseEmbedder = create_embedder()
         self.synthesizer = MissionSynthesizer()
         self.store = SupabaseVectorStore()
+        self.optimizer = KnapsackOptimizer()
 
         logger.info(
             f"NexusPipeline initialized | "
@@ -192,6 +200,172 @@ class NexusPipeline:
         to do custom queries against Supabase directly.
         """
         return await self.embedder.embed_text(query)
+
+    # -------------------------------------------------------------------
+    # FLOW 3: PACK  --  Search + Knapsack Optimization
+    # -------------------------------------------------------------------
+    async def pack(
+        self,
+        query: str,
+        constraints: PackingConstraints | str,
+        top_k: int = 30,
+        category_filter: Optional[str] = None,
+        inventory: Optional[dict[str, int]] = None,
+        weight_overrides: Optional[dict[str, float]] = None,
+    ) -> PackingResult:
+        """
+        The full Nexus pipeline: semantic search → knapsack optimization.
+
+        1. Embeds the query and searches Supabase for top_k candidates
+        2. Converts results to PackableItems with weights/quantities
+        3. Solves the bounded knapsack with diversity constraints
+
+        Args:
+            query: Natural language mission description.
+            constraints: Either a PackingConstraints object or a preset name
+                         ("drone_delivery", "medical_relief", "carry_on_luggage", etc.)
+            top_k: Candidate pool size. Solver picks the best subset from these.
+                   Use 30+ so the solver has enough to work with.
+            category_filter: Optional category pre-filter on the vector search.
+            inventory: {item_id: quantity_owned} map. Default: 1 of each.
+            weight_overrides: {item_id: weight_grams} for items with known weights.
+
+        Returns:
+            PackingResult with optimally selected items, weights, and score.
+        """
+        t0 = time.time()
+
+        # Resolve constraint preset if string
+        if isinstance(constraints, str):
+            if constraints not in CONSTRAINT_PRESETS:
+                raise ValueError(
+                    f"Unknown preset '{constraints}'. "
+                    f"Available: {list(CONSTRAINT_PRESETS.keys())}"
+                )
+            constraints = CONSTRAINT_PRESETS[constraints]
+
+        # Step 1: Vector search for candidates
+        logger.info(f"Pack: searching for {top_k} candidates...")
+        retrieved = await self.search(
+            query=query,
+            top_k=top_k,
+            category_filter=category_filter,
+            synthesize=False,  # Raw results, no LLM yet
+        )
+
+        # Step 2: Convert to packable items
+        packable = KnapsackOptimizer.retrieved_to_packable(
+            items=retrieved,
+            inventory=inventory,
+            weight_overrides=weight_overrides,
+        )
+
+        # Step 3: Solve
+        logger.info(
+            f"Pack: solving knapsack | "
+            f"{len(packable)} candidates | "
+            f"max_weight={constraints.max_weight_grams}g | "
+            f"category_mins={constraints.category_minimums} | "
+            f"tag_mins={constraints.tag_minimums}"
+        )
+        result = self.optimizer.solve(packable, constraints)
+
+        t1 = time.time()
+        logger.info(f"Pack complete in {(t1 - t0) * 1000:.0f}ms total")
+        return result
+
+    async def pack_and_explain(
+        self,
+        query: str,
+        constraints: PackingConstraints | str,
+        top_k: int = 30,
+        inventory: Optional[dict[str, int]] = None,
+        weight_overrides: Optional[dict[str, float]] = None,
+    ) -> tuple[PackingResult, MissionPlan]:
+        """
+        The full demo flow: search → optimize → LLM explanation.
+
+        Runs the knapsack solver first, then passes the selected AND rejected
+        items to the LLM synthesizer for a natural language explanation.
+        This is what you show the judges.
+
+        Returns:
+            (PackingResult, MissionPlan) — the math AND the story.
+        """
+        # Run the optimizer
+        result = await self.pack(
+            query=query,
+            constraints=constraints,
+            top_k=top_k,
+            inventory=inventory,
+            weight_overrides=weight_overrides,
+        )
+
+        if result.status == "infeasible":
+            # Still explain why it failed
+            plan = MissionPlan(
+                mission_summary=f"Unable to satisfy constraints for: {query}",
+                selected_items=[],
+                reasoning={},
+                warnings=result.relaxed_constraints + [
+                    "The optimizer could not find a feasible solution. "
+                    "Try increasing the weight limit or relaxing diversity requirements."
+                ],
+                rejected_items=[],
+            )
+            return result, plan
+
+        # Build RetrievedItems for the synthesizer from packed items
+        from .models import RetrievedItem, ItemContext
+        selected_retrieved = []
+        for item, qty in result.packed_items:
+            # Find the original RetrievedItem context
+            selected_retrieved.append(RetrievedItem(
+                item_id=item.item_id,
+                score=item.similarity_score,
+                context=ItemContext(
+                    name=f"{item.name} (x{qty})" if qty > 1 else item.name,
+                    inferred_category=item.category,
+                    utility_summary=f"Packed {qty} unit(s), {item.weight_grams * qty:.0f}g total",
+                    semantic_tags=item.semantic_tags,
+                ),
+            ))
+
+        rejected_retrieved = []
+        for item in result.unpacked_items[:10]:  # Cap at 10 for the prompt
+            rejected_retrieved.append(RetrievedItem(
+                item_id=item.item_id,
+                score=item.similarity_score,
+                context=ItemContext(
+                    name=item.name,
+                    inferred_category=item.category,
+                    utility_summary="Not selected by optimizer",
+                    semantic_tags=item.semantic_tags,
+                ),
+            ))
+
+        # Augment the query with constraint context for the LLM
+        constraint_desc = (
+            f"{query}\n\n"
+            f"CONSTRAINTS APPLIED:\n"
+            f"- Weight limit: {constraints.max_weight_grams / 1000:.1f} kg\n"
+            f"- Result: {result.total_weight_grams / 1000:.1f} kg used "
+            f"({result.weight_utilization:.0%} utilization)\n"
+        )
+        if isinstance(constraints, PackingConstraints) and constraints.category_minimums:
+            constraint_desc += f"- Category minimums: {constraints.category_minimums}\n"
+        if isinstance(constraints, PackingConstraints) and constraints.tag_minimums:
+            constraint_desc += f"- Tag minimums: {constraints.tag_minimums}\n"
+        if result.relaxed_constraints:
+            constraint_desc += f"- Relaxed: {result.relaxed_constraints}\n"
+
+        # Let the LLM explain the optimizer's decisions
+        plan = await self.synthesizer.synthesize(
+            constraint_desc,
+            selected_retrieved + rejected_retrieved,
+        )
+
+        return result, plan
 
     # -------------------------------------------------------------------
     # UTILITY: Get setup SQL for Supabase

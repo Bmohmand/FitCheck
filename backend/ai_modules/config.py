@@ -8,8 +8,8 @@ Required env vars:
   OPENAI_API_KEY        - For GPT-4o Vision context extraction
   VOYAGE_API_KEY        - For Voyage multimodal embeddings (option A)
   GOOGLE_PROJECT_ID     - For Vertex AI embeddings (option B)
-  PINECONE_API_KEY      - Zihan's Pinecone index (used in pipeline)
-  PINECONE_INDEX_NAME   - Name of the Pinecone serverless index
+  SUPABASE_URL          - Supabase project URL
+  SUPABASE_SERVICE_KEY  - Supabase service role key (NOT the anon key)
 """
 
 import os
@@ -28,8 +28,8 @@ class EmbeddingProvider(str, Enum):
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 VOYAGE_API_KEY: str = os.getenv("VOYAGE_API_KEY", "")
 GOOGLE_PROJECT_ID: str = os.getenv("GOOGLE_PROJECT_ID", "")
-PINECONE_API_KEY: str = os.getenv("PINECONE_API_KEY", "")
-PINECONE_INDEX_NAME: str = os.getenv("PINECONE_INDEX_NAME", "nexus-items")
+SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 # ---------------------------------------------------------------------------
 # Model Configuration
@@ -85,6 +85,8 @@ def validate_config() -> list[str]:
         warnings.append("VOYAGE_API_KEY not set — switch provider or set key")
     if EMBEDDING_PROVIDER == EmbeddingProvider.VERTEX and not GOOGLE_PROJECT_ID:
         warnings.append("GOOGLE_PROJECT_ID not set — Vertex AI will fail")
-    if not PINECONE_API_KEY:
-        warnings.append("PINECONE_API_KEY not set — database ops will fail")
+    if not SUPABASE_URL:
+        warnings.append("SUPABASE_URL not set — database ops will fail")
+    if not SUPABASE_SERVICE_KEY:
+        warnings.append("SUPABASE_SERVICE_KEY not set — database ops will fail")
     return warnings

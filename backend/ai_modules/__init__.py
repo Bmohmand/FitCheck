@@ -24,6 +24,13 @@ Env vars needed:
 
 from .pipeline import NexusPipeline
 from .vector_store import SupabaseVectorStore
+from .knapsack_optimizer import (
+    KnapsackOptimizer,
+    PackingConstraints,
+    PackingResult,
+    PackableItem,
+    CONSTRAINT_PRESETS,
+)
 from .models import (
     ItemContext,
     EmbeddingResult,
@@ -36,6 +43,11 @@ from .config import EmbeddingProvider, validate_config
 __all__ = [
     "NexusPipeline",
     "SupabaseVectorStore",
+    "KnapsackOptimizer",
+    "PackingConstraints",
+    "PackingResult",
+    "PackableItem",
+    "CONSTRAINT_PRESETS",
     "ItemContext",
     "EmbeddingResult",
     "SearchQuery",
