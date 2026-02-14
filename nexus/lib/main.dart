@@ -31,7 +31,6 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -61,6 +60,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Column(
           children: [
@@ -87,7 +87,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -138,7 +138,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Widget _buildSearchBar() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Column(
         children: [
           Container(
@@ -198,9 +198,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E293B).withOpacity(0.5),
+                color: const Color.fromRGBO(255, 30, 41, 0.5),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
+                border: Border.all(color: const Color.fromRGBO(255, 99, 102, 0.3)),
               ),
               child: const Row(
                 children: [
@@ -260,23 +260,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildFAB() {
-    return Container(
-      margin: const EdgeInsets.only(top: 40),
-      child: FloatingActionButton.extended(
-        onPressed: () {
-          setState(() {
-            _selectedIndex = 1;
-          });
-        },
-        backgroundColor: const Color(0xFF6366F1),
-        elevation: 8,
-        icon: const Icon(Icons.add_a_photo, color: Colors.white),
-        label: const Text(
-          'Quick Scan',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+    return FloatingActionButton.extended(
+      onPressed: () {
+        setState(() {
+          _selectedIndex = 1;
+        });
+      },
+      backgroundColor: const Color(0xFF6366F1),
+      elevation: 8,
+      icon: const Icon(Icons.add_a_photo, color: Colors.white),
+      label: const Text(
+        'Quick Scan',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
@@ -460,7 +457,7 @@ class ItemsGridView extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF6366F1).withOpacity(0.2),
+                        color: const Color.fromRGBO(255, 99, 102, 0.2),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -545,7 +542,7 @@ class _CameraIngestViewState extends State<CameraIngestView> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -557,7 +554,7 @@ class _CameraIngestViewState extends State<CameraIngestView> {
               color: const Color(0xFF1E293B),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: const Color(0xFF6366F1).withOpacity(0.3),
+                color: const Color.fromRGBO(255, 99, 102, 0.3),
                 width: 2,
               ),
             ),
@@ -634,7 +631,7 @@ class _CameraIngestViewState extends State<CameraIngestView> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF1E293B).withOpacity(0.5),
+              color: const Color.fromRGBO(255, 30, 41, 0.5),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Column(
@@ -922,7 +919,7 @@ class GraphVisualizationView extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A).withOpacity(0.9),
+                        color: const Color.fromRGBO(255, 15, 23, 0.9),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Column(
@@ -990,7 +987,7 @@ class GraphVisualizationView extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF1E293B).withOpacity(0.5),
+              color: const Color.fromRGBO(255, 30, 41, 0.5),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Row(
