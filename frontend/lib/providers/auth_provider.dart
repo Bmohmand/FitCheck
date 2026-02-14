@@ -11,6 +11,7 @@ class AuthProvider with ChangeNotifier {
   User? _currentUser;
   Profile? _currentProfile;
   bool _isLoading = false;
+  bool _isLoadingProfile = false;
   String? _errorMessage;
 
   User? get currentUser => _currentUser;
@@ -42,12 +43,14 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> _loadProfile() async {
-    if (_currentUser == null) return;
+    if (_currentUser == null || _isLoadingProfile) return;
+    
+    _isLoadingProfile = true;
     
     try {
       _currentProfile = await _profileRepository.getDefaultProfile(_currentUser!.id);
       
-      // If no profile exists, create one
+      // If no profile exists, create one (only if still null after check)
       if (_currentProfile == null) {
         final newProfile = Profile(
           id: '',
@@ -57,12 +60,24 @@ class AuthProvider with ChangeNotifier {
           clothingSizePreferences: {},
           createdAt: DateTime.now(),
         );
-        _currentProfile = await _profileRepository.createProfile(newProfile);
+        
+        try {
+          _currentProfile = await _profileRepository.createProfile(newProfile);
+        } catch (e) {
+          // If creation fails (likely duplicate), try to fetch again
+          if (e.toString().contains('duplicate') || e.toString().contains('unique')) {
+            _currentProfile = await _profileRepository.getDefaultProfile(_currentUser!.id);
+          } else {
+            rethrow;
+          }
+        }
       }
       
+      _isLoadingProfile = false;
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to load profile: $e';
+      _isLoadingProfile = false;
       notifyListeners();
     }
   }
@@ -85,7 +100,8 @@ class AuthProvider with ChangeNotifier {
 
       if (response.user != null) {
         _currentUser = response.user;
-        await _loadProfile();
+        // Don't await - let auth state listener handle profile creation
+        // This prevents duplicate creation from signup and listener
         _isLoading = false;
         notifyListeners();
         return true;
@@ -118,7 +134,7 @@ class AuthProvider with ChangeNotifier {
 
       if (response.user != null) {
         _currentUser = response.user;
-        await _loadProfile();
+        // Auth state listener will handle profile loading
         _isLoading = false;
         notifyListeners();
         return true;

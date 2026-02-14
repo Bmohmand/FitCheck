@@ -15,6 +15,12 @@ class ProfileRepository {
           .single();
 
       return Profile.fromJson(response);
+    } on PostgrestException catch (e) {
+      // Handle duplicate user_id constraint violation
+      if (e.code == '23505' || e.message.contains('duplicate') || e.message.contains('unique')) {
+        throw Exception('Profile already exists for this user');
+      }
+      throw Exception('Failed to create profile: ${e.message}');
     } catch (e) {
       throw Exception('Failed to create profile: $e');
     }
