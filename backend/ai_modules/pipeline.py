@@ -4,8 +4,8 @@ nexus_ai/pipeline.py
 Main orchestrator. This is the module Zihan imports into his FastAPI app.
 
 Two core flows:
-  1. INGEST:  image → context extraction → embedding → return for Pinecone upsert
-  2. SEARCH:  query text → query embedding → (Pinecone search handled by Zihan) → synthesis
+  1. INGEST:  image -> context extraction -> embedding -> upsert to Supabase
+  2. SEARCH:  query text -> query embedding -> Supabase pgvector search -> synthesis
 
 Usage in Zihan's FastAPI:
     from nexus_ai.pipeline import NexusPipeline
@@ -13,20 +13,26 @@ Usage in Zihan's FastAPI:
     pipeline = NexusPipeline()
 
     # In POST /api/ingest
-    result = await pipeline.ingest(image_bytes)
+    item_id = await pipeline.ingest(image_bytes, image_url="https://s3...")
 
-    # In POST /api/search/semantic (after Pinecone returns results)
-    plan = await pipeline.synthesize_results(query, retrieved_items)
+    # In POST /api/search/semantic  (one call does everything now)
+    plan = await pipeline.search("48-hour cold climate medical mission")
+
+Env vars needed:
+    OPENAI_API_KEY, VOYAGE_API_KEY (or GOOGLE_PROJECT_ID),
+    SUPABASE_URL, SUPABASE_SERVICE_KEY
 """
 
 import logging
 import time
+from typing import Optional
 
 from .config import EMBEDDING_PROVIDER, validate_config
 from .models import ItemContext, EmbeddingResult, RetrievedItem, MissionPlan, SearchQuery
 from .context_extractor import ContextExtractor
 from .embedding_engine import create_embedder, BaseEmbedder
 from .mission_synthesizer import MissionSynthesizer
+from .vector_store import SupabaseVectorStore
 
 logger = logging.getLogger("nexus.pipeline")
 
@@ -49,6 +55,7 @@ class NexusPipeline:
         self.extractor = ContextExtractor()
         self.embedder: BaseEmbedder = create_embedder()
         self.synthesizer = MissionSynthesizer()
+        self.store = SupabaseVectorStore()
 
         logger.info(
             f"NexusPipeline initialized | "
@@ -57,29 +64,29 @@ class NexusPipeline:
         )
 
     # -------------------------------------------------------------------
-    # FLOW 1: INGEST — Called by Zihan's POST /api/ingest
+    # FLOW 1: INGEST  --  Called by Zihan's POST /api/ingest
     # -------------------------------------------------------------------
-    async def ingest(self, image_source: str | bytes) -> EmbeddingResult:
+    async def ingest(self, image_source: str | bytes, image_url: str = "") -> str:
         """
-        Full ingest pipeline: image → context → embedding.
+        Full ingest pipeline: image -> context -> embedding -> store in Supabase.
 
         Args:
             image_source: File path, URL, or raw bytes of the image.
+            image_url: The public S3/R2 URL after Zihan uploads the image.
 
         Returns:
-            EmbeddingResult containing the vector, metadata, and item_id
-            ready for Zihan to upsert into Pinecone.
+            The item's UUID (stored in Supabase).
         """
         t0 = time.time()
 
         # Step 1: Extract semantic context via Vision LLM
-        logger.info("Step 1/2: Extracting context via GPT-4o Vision...")
+        logger.info("Step 1/3: Extracting context via GPT-4o Vision...")
         context: ItemContext = await self.extractor.extract(image_source)
         t1 = time.time()
         logger.info(f"  Context extracted in {t1 - t0:.1f}s: {context.name} [{context.inferred_category}]")
 
         # Step 2: Generate multimodal embedding
-        logger.info("Step 2/2: Generating multimodal embedding...")
+        logger.info("Step 2/3: Generating multimodal embedding...")
         vector: list[float] = await self.embedder.embed_item(image_source, context)
         t2 = time.time()
         logger.info(f"  Embedding generated in {t2 - t1:.1f}s: dim={len(vector)}")
@@ -88,140 +95,114 @@ class NexusPipeline:
             vector=vector,
             dimension=len(vector),
             context=context,
+            image_url=image_url,
         )
 
-        logger.info(f"Ingest complete in {t2 - t0:.1f}s | id={result.item_id}")
-        return result
+        # Step 3: Upsert into Supabase
+        logger.info("Step 3/3: Upserting into Supabase...")
+        item_id = await self.store.upsert(result, image_url=image_url)
+        t3 = time.time()
 
-    async def ingest_batch(self, image_sources: list[str | bytes]) -> list[EmbeddingResult]:
+        logger.info(f"Ingest complete in {t3 - t0:.1f}s | id={item_id}")
+        return item_id
+
+    async def ingest_batch(self, image_sources: list[tuple[str | bytes, str]]) -> list[str]:
         """
         Batch ingest for the demo seed phase (Hour 24-30).
         Processes items sequentially to avoid rate limits.
+
+        Args:
+            image_sources: List of (image_source, image_url) tuples.
+
+        Returns:
+            List of item UUIDs.
         """
         import asyncio
-        results = []
-        for i, src in enumerate(image_sources):
+        ids = []
+        for i, (src, url) in enumerate(image_sources):
             logger.info(f"Batch ingest [{i + 1}/{len(image_sources)}]")
             try:
-                result = await self.ingest(src)
-                results.append(result)
+                item_id = await self.ingest(src, image_url=url)
+                ids.append(item_id)
             except Exception as e:
                 logger.error(f"Failed to ingest item {i + 1}: {e}")
             # Small delay to avoid rate limits
             await asyncio.sleep(0.5)
-        return results
+        return ids
 
     # -------------------------------------------------------------------
-    # FLOW 2: SEARCH — Called by Zihan's POST /api/search/semantic
+    # FLOW 2: SEARCH  --  Called by Zihan's POST /api/search/semantic
     # -------------------------------------------------------------------
-    async def embed_query(self, query: str) -> list[float]:
+    async def search(
+        self,
+        query: str,
+        top_k: int = 15,
+        category_filter: Optional[str] = None,
+        synthesize: bool = True,
+    ) -> MissionPlan | list[RetrievedItem]:
         """
-        Convert a natural language search query into a vector.
+        Full search pipeline: query -> embed -> Supabase vector search -> synthesize.
 
-        Zihan: call this, then use the vector to query Pinecone:
-            vector = await pipeline.embed_query("cold weather medical mission")
-            results = pinecone_index.query(vector=vector, top_k=15)
+        This is now a SINGLE call that does everything. Zihan's route handler
+        just needs:
+            plan = await pipeline.search("cold weather medical mission")
 
         Args:
             query: Natural language search text from Noah's UI.
+            top_k: Number of nearest neighbors.
+            category_filter: Optional category to restrict search.
+            synthesize: If True, run LLM synthesis. If False, return raw results.
 
         Returns:
-            Query embedding vector (same dimension as item embeddings).
+            MissionPlan (if synthesize=True) or list of RetrievedItem (if False).
         """
-        logger.info(f"Embedding query: '{query[:80]}...'")
-        vector = await self.embedder.embed_text(query)
-        logger.info(f"Query embedded: dim={len(vector)}")
-        return vector
+        t0 = time.time()
 
-    async def synthesize_results(
-        self, query: str, retrieved_items: list[RetrievedItem]
-    ) -> MissionPlan:
-        """
-        Post-retrieval synthesis: curate Pinecone results into a mission plan.
+        # Step 1: Embed the query
+        logger.info(f"Embedding query: '{query[:80]}'...")
+        query_vector = await self.embedder.embed_text(query)
 
-        Zihan: call this AFTER your Pinecone query returns results:
-            # 1. Query Pinecone
-            raw_results = pinecone_index.query(vector=qvec, top_k=15, include_metadata=True)
-            # 2. Convert to RetrievedItem objects
-            items = [RetrievedItem(...) for match in raw_results.matches]
-            # 3. Synthesize
-            plan = await pipeline.synthesize_results(query, items)
+        # Step 2: Search Supabase pgvector
+        logger.info(f"Searching Supabase (top_k={top_k})...")
+        retrieved = await self.store.search(
+            query_vector=query_vector,
+            top_k=top_k,
+            category_filter=category_filter,
+        )
+        t1 = time.time()
+        logger.info(f"Retrieved {len(retrieved)} items in {t1 - t0:.1f}s")
 
-        Returns:
-            MissionPlan with selected items, rejected items, reasoning, and warnings.
-        """
-        logger.info(f"Synthesizing plan for {len(retrieved_items)} items...")
-        plan = await self.synthesizer.synthesize(query, retrieved_items)
+        if not synthesize:
+            return retrieved
+
+        # Step 3: LLM synthesis into a mission plan
+        logger.info("Synthesizing mission plan...")
+        plan = await self.synthesizer.synthesize(query, retrieved)
+        t2 = time.time()
         logger.info(
-            f"Plan complete: {len(plan.selected_items)} selected, "
-            f"{len(plan.rejected_items)} rejected, "
-            f"{len(plan.warnings)} warnings"
+            f"Search complete in {t2 - t0:.1f}s | "
+            f"{len(plan.selected_items)} selected, "
+            f"{len(plan.rejected_items)} rejected"
         )
         return plan
 
-    # -------------------------------------------------------------------
-    # UTILITY: Convert Pinecone match → RetrievedItem
-    # -------------------------------------------------------------------
-    @staticmethod
-    def pinecone_match_to_item(match: dict) -> RetrievedItem:
+    async def embed_query(self, query: str) -> list[float]:
         """
-        Helper for Zihan: convert a raw Pinecone query match into a
-        RetrievedItem that the synthesizer can consume.
-
-        Usage:
-            results = index.query(vector=qvec, top_k=15, include_metadata=True)
-            items = [NexusPipeline.pinecone_match_to_item(m) for m in results.matches]
+        Just embed a query without searching. Useful if Zihan wants
+        to do custom queries against Supabase directly.
         """
-        meta = match.get("metadata", {})
-        return RetrievedItem(
-            item_id=match["id"],
-            score=match["score"],
-            image_url=meta.get("image_url"),
-            context=ItemContext(
-                name=meta.get("name", "Unknown"),
-                inferred_category=meta.get("inferred_category", "misc"),
-                primary_material=meta.get("primary_material"),
-                weight_estimate=meta.get("weight_estimate"),
-                thermal_rating=meta.get("thermal_rating"),
-                water_resistance=meta.get("water_resistance"),
-                medical_application=meta.get("medical_application"),
-                utility_summary=meta.get("utility_summary", ""),
-                semantic_tags=meta.get("semantic_tags", []),
-                durability=meta.get("durability"),
-                compressibility=meta.get("compressibility"),
-            ),
-        )
+        return await self.embedder.embed_text(query)
 
     # -------------------------------------------------------------------
-    # UTILITY: Build Pinecone-ready metadata from EmbeddingResult
+    # UTILITY: Get setup SQL for Supabase
     # -------------------------------------------------------------------
-    @staticmethod
-    def to_pinecone_payload(result: EmbeddingResult, image_url: str = "") -> dict:
+    def get_setup_sql(self) -> str:
         """
-        Helper for Zihan: format an EmbeddingResult for Pinecone upsert.
+        Returns the SQL Zihan needs to run once in Supabase SQL Editor.
+        Automatically uses the correct vector dimension.
+        """
+        return self.store.get_setup_sql(dim=self.embedder.dimension)
 
-        Usage:
-            result = await pipeline.ingest(image_bytes)
-            image_url = upload_to_s3(image_bytes)
-            payload = NexusPipeline.to_pinecone_payload(result, image_url)
-            index.upsert(vectors=[payload])
-        """
-        ctx = result.context
-        return {
-            "id": result.item_id,
-            "values": result.vector,
-            "metadata": {
-                "image_url": image_url,
-                "name": ctx.name,
-                "inferred_category": ctx.inferred_category,
-                "primary_material": ctx.primary_material,
-                "weight_estimate": ctx.weight_estimate,
-                "thermal_rating": ctx.thermal_rating,
-                "water_resistance": ctx.water_resistance,
-                "medical_application": ctx.medical_application,
-                "utility_summary": ctx.utility_summary,
-                "semantic_tags": ctx.semantic_tags,
-                "durability": ctx.durability,
-                "compressibility": ctx.compressibility,
-            },
-        }
+    async def item_count(self) -> int:
+        """How many items are in the database."""
+        return await self.store.count()

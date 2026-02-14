@@ -23,6 +23,7 @@ Env vars needed:
 """
 
 from .pipeline import NexusPipeline
+from .vector_store import SupabaseVectorStore
 from .models import (
     ItemContext,
     EmbeddingResult,
@@ -34,6 +35,7 @@ from .config import EmbeddingProvider, validate_config
 
 __all__ = [
     "NexusPipeline",
+    "SupabaseVectorStore",
     "ItemContext",
     "EmbeddingResult",
     "SearchQuery",

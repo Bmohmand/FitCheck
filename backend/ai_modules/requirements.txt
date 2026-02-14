@@ -1,9 +1,12 @@
-# Nexus AI Pipeline — Requirements
+# Nexus AI Pipeline - Requirements
 # Install: pip install -r requirements.txt
 
 # Core
 pydantic>=2.5.0
 openai>=1.12.0           # GPT-4o Vision + synthesis
+
+# Vector Database
+supabase>=2.3.0           # Supabase client (includes pgvector via RPC)
 
 # Embedding Providers (install the one you're using)
 voyageai>=0.3.0           # Option A: Voyage multimodal-3 (recommended)
