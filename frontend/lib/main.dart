@@ -1,6 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'config/supabase_config.dart';
+import 'providers/auth_provider.dart';
+import 'providers/closet_provider.dart';
+import 'screens/auth/login_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  try {
+    // Initialize Supabase
+    await SupabaseConfig.initialize();
+  } catch (e) {
+    // If initialization fails, show error
+    runApp(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text(
+                  'Configuration Error',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  e.toString(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.red),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Please check your .env file and ensure '
+                  'SUPABASE_URL and SUPABASE_ANON_KEY are set correctly.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ));
+    return;
+  }
+  
   runApp(const ClosetAIApp());
 }
 
@@ -9,24 +56,39 @@ class ClosetAIApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FitCheck',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1), // Indigo
-          brightness: Brightness.light,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => ClosetProvider()),
+      ],
+      child: MaterialApp(
+        title: 'FitCheck',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF6366F1), // Indigo
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
         ),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1),
-          brightness: Brightness.dark,
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF6366F1),
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
         ),
-        useMaterial3: true,
+        home: Consumer<AuthProvider>(
+          builder: (context, authProvider, child) {
+            // Show login screen if not authenticated
+            if (!authProvider.isAuthenticated) {
+              return const LoginScreen();
+            }
+            // Show main app if authenticated
+            return const MainNavigationScreen();
+          },
+        ),
+        debugShowCheckedModeBanner: false,
       ),
-      home: const MainNavigationScreen(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }
