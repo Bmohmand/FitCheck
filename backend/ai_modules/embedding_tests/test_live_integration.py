@@ -405,7 +405,7 @@ class TestLiveFullRoundTrip:
                 item_id, _ = await pipeline.ingest(path, user_id=TEST_USER_ID)
                 return item_id
 
-            tasks = [_ingest_one(paths[0]) for cat, paths in categorized_images.items()]
+            tasks = [_ingest_one(path) for cat, paths in categorized_images.items() for path in paths]
             ingested_ids = await asyncio.gather(*tasks)
 
             # Search for medical items
