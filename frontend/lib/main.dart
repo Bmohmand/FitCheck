@@ -261,7 +261,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
       ),
       bottomNavigationBar: _buildBottomNav(),
-      floatingActionButton: _buildFAB(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
@@ -2256,6 +2255,8 @@ class _ContainersViewState extends State<ContainersView> {
 }
 
 // NEW: Item Detail Page - Add this at the bottom of main.dart
+// Item Detail Page - UPDATED VERSION
+// Item Detail Page - UPDATED (no domain duplication)
 class ItemDetailPage extends StatelessWidget {
   final Map<String, dynamic> item;
 
@@ -2321,57 +2322,59 @@ class ItemDetailPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   
-                  // Category Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color.fromRGBO(99, 102, 241, 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF6366F1)),
-                    ),
-                    child: Text(
-                      category,
-                      style: const TextStyle(
-                        color: Color(0xFF6366F1),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                  // Category Badge (removed domain)
+                  _buildBadge(category, const Color(0xFF6366F1)),
                   
                   const SizedBox(height: 24),
                   const Divider(color: Color(0xFF334155)),
                   const SizedBox(height: 24),
                   
-                  // Details Grid
-                  _buildDetailSection('Overview', [
-                    _buildDetailRow('Domain', item['domain']),
+                  // Overview (removed domain row)
+                  _buildSection('Overview', [
                     _buildDetailRow('Status', item['status']),
                     _buildDetailRow('Quantity', item['quantity']),
                   ]),
                   
+                  // Specifications (only show if any field has data)
+                  if (_hasSpecifications())
+                    ...[
+                      const SizedBox(height: 24),
+                      _buildSection('Specifications', [
+                        _buildDetailRow('Primary Material', item['primary_material']),
+                        _buildDetailRow('Weight Estimate', item['weight_estimate']),
+                        _buildDetailRow('Thermal Rating', item['thermal_rating']),
+                        _buildDetailRow('Water Resistance', item['water_resistance']),
+                      ]),
+                    ],
+                  
+                  // Medical (only show if has data)
+                  if (item['medical_application'] != null && item['medical_application'].toString().isNotEmpty)
+                    ...[
+                      const SizedBox(height: 24),
+                      _buildSection('Medical', [
+                        _buildDetailRow('Medical Application', item['medical_application']),
+                      ]),
+                    ],
+                  
+                  // Utility Summary (only show if has data)
+                  if (item['utility_summary'] != null && item['utility_summary'].toString().isNotEmpty)
+                    ...[
+                      const SizedBox(height: 24),
+                      _buildSection('Utility Summary', [
+                        _buildUtilitySummary(item['utility_summary']),
+                      ]),
+                    ],
+                  
+                  // Debug: Show ALL fields
                   const SizedBox(height: 24),
-                  
-                  _buildDetailSection('Specifications', [
-                    _buildDetailRow('Primary Material', item['primary_material']),
-                    _buildDetailRow('Weight Estimate', item['weight_estimate']),
-                    _buildDetailRow('Thermal Rating', item['thermal_rating']),
-                    _buildDetailRow('Water Resistance', item['water_resistance']),
-                  ]),
-                  
-                  const SizedBox(height: 24),
-                  
-                  if (item['medical_application'] != null)
-                    _buildDetailSection('Medical', [
-                      _buildDetailRow('Medical Application', item['medical_application']),
-                    ]),
-                  
-                  if (item['utility_summary'] != null) ...[
-                    const SizedBox(height: 24),
-                    _buildDetailSection('Utility Summary', [
-                      _buildUtilitySummary(item['utility_summary']),
-                    ]),
-                  ],
+_buildSection('', [
+  ...item.entries.where((e) => 
+    !['id', 'user_id', 'profile_id', 'image_url', 'created_at', 'updated_at', 'name', 'domain', 'category', 'status', 'quantity', 'utility_summary'].contains(e.key)
+  ).map((e) => _buildDetailRow(
+    _formatFieldName(e.key), 
+    e.value,
+  )),
+]),
                 ],
               ),
             ),
@@ -2381,7 +2384,44 @@ class ItemDetailPage extends StatelessWidget {
     );
   }
 
-  Widget _buildDetailSection(String title, List<Widget> children) {
+  bool _hasSpecifications() {
+    return (item['primary_material'] != null && item['primary_material'].toString().isNotEmpty) ||
+           (item['weight_estimate'] != null && item['weight_estimate'].toString().isNotEmpty) ||
+           (item['thermal_rating'] != null && item['thermal_rating'].toString().isNotEmpty) ||
+           (item['water_resistance'] != null && item['water_resistance'].toString().isNotEmpty);
+  }
+
+  String _formatFieldName(String key) {
+    return key.split('_').map((word) => 
+      word[0].toUpperCase() + word.substring(1)
+    ).join(' ');
+  }
+
+  Widget _buildBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSection(String title, List<Widget> children) {
+    // Filter out empty widgets
+    final nonEmptyChildren = children.where((w) => w is! SizedBox || (w as SizedBox).height != 0).toList();
+    
+    if (nonEmptyChildren.isEmpty) return const SizedBox.shrink();
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2394,13 +2434,15 @@ class ItemDetailPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        ...children,
+        ...nonEmptyChildren,
       ],
     );
   }
 
   Widget _buildDetailRow(String label, dynamic value) {
-    if (value == null || value.toString().isEmpty) return const SizedBox.shrink();
+    if (value == null || value.toString().isEmpty || value.toString() == 'null') {
+      return const SizedBox.shrink();
+    }
     
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
