@@ -1959,6 +1959,33 @@ Positioned(
     ),
   ),
 ),
+// Refresh button
+Positioned(
+  top: 20,
+  right: 20,
+  child: GestureDetector(
+    onTap: () {
+      setState(() {
+        _isLoading = true;
+        _nodes = [];
+      });
+      _loadGraphData();
+    },
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B).withOpacity(0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: const Icon(
+        Icons.refresh,
+        color: Color(0xFF6366F1),
+        size: 20,
+      ),
+    ),
+  ),
+),
                 
                 // Hint
                 Positioned(
