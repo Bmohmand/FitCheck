@@ -21,6 +21,16 @@ from _import_helper import models, load_module
 ItemContext = models.ItemContext
 EmbeddingResult = models.EmbeddingResult
 
+# Force load .env (in case _import_helper didn't or ran too early/late)
+try:
+    from dotenv import load_dotenv
+    # Assuming backend/.env
+    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+except ImportError:
+    pass
+
 # ---------------------------------------------------------------------------
 # Skip if Supabase creds missing
 # ---------------------------------------------------------------------------
@@ -32,7 +42,8 @@ needs_supabase = pytest.mark.skipif(
 )
 
 # Deterministic user ID for test isolation — cleanup targets this.
-TEST_USER_ID = "00000000-0000-0000-0000-aaaa00000001"
+# Use env var if available, otherwise None (to avoid FK violations if user doesn't exist)
+TEST_USER_ID = os.getenv("TEST_USER_ID")
 
 DIM = 1024
 

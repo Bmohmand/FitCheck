@@ -21,6 +21,7 @@ Environment setup:
   export SUPABASE_SERVICE_KEY="eyJ..."
 """
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -32,6 +33,14 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+# Force load .env to ensure keys are available before module-level checks
+try:
+    from dotenv import load_dotenv
+    env_path = BACKEND_DIR / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+except ImportError:
+    pass
 
 # ---------------------------------------------------------------------------
 # Skip conditions
@@ -39,6 +48,10 @@ if str(BACKEND_DIR) not in sys.path:
 HAS_OPENAI_KEY = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_AI_KEY"))
 HAS_VOYAGE_KEY = bool(os.getenv("VOYAGE_API_KEY"))
 HAS_SUPABASE = bool(os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_KEY"))
+
+if not (HAS_OPENAI_KEY and HAS_VOYAGE_KEY and HAS_SUPABASE):
+    print(f"\n[DEBUG] Live keys missing. Env loaded? PWD={os.getcwd()}")
+    print(f"[DEBUG] OPENAI={HAS_OPENAI_KEY} VOYAGE={HAS_VOYAGE_KEY} SUPABASE={HAS_SUPABASE}")
 
 needs_openai = pytest.mark.skipif(
     not HAS_OPENAI_KEY, reason="OPENAI_API_KEY not set"
@@ -57,7 +70,7 @@ TEST_IMAGES_DIR = Path(__file__).resolve().parent.parent / "test_images"
 
 # Deterministic user ID for test isolation — all ingested rows use this so
 # cleanup can target them without touching real data.
-TEST_USER_ID = "00000000-0000-0000-0000-aaaa00000001"
+TEST_USER_ID = os.getenv("TEST_USER_ID")
 
 # Minimal 1x1 red PNG for when no real images are available
 TINY_PNG = (
@@ -270,21 +283,28 @@ class TestLiveEmbeddingClustering:
         extractor = ContextExtractor() if HAS_OPENAI_KEY else None
 
         # Embed up to 2 items per category (to keep API costs down)
+        async def _embed_one(path, cat):
+            if extractor:
+                ctx = await extractor.extract(path)
+            else:
+                ctx = ItemContext(
+                    name=Path(path).stem,
+                    inferred_category=cat,
+                    utility_summary=f"A {cat} item",
+                )
+            vec = await embedder.embed_item(path, ctx)
+            return cat, np.array(vec)
+
+        tasks = [
+            _embed_one(path, cat)
+            for cat, paths in categorized_images.items()
+            for path in paths[:2]
+        ]
+        results = await asyncio.gather(*tasks)
+
         cat_vectors = {}
-        for cat, paths in categorized_images.items():
-            vecs = []
-            for path in paths[:2]:
-                if extractor:
-                    ctx = await extractor.extract(path)
-                else:
-                    ctx = ItemContext(
-                        name=Path(path).stem,
-                        inferred_category=cat,
-                        utility_summary=f"A {cat} item",
-                    )
-                vec = await embedder.embed_item(path, ctx)
-                vecs.append(np.array(vec))
-            cat_vectors[cat] = vecs
+        for cat, vec in results:
+            cat_vectors.setdefault(cat, []).append(vec)
 
         # Calculate intra-category average similarity
         intra_sims = []
@@ -381,11 +401,12 @@ class TestLiveFullRoundTrip:
 
         try:
             # Ingest 1 item per category
-            for cat, paths in categorized_images.items():
-                item_id, ctx = await pipeline.ingest(
-                    paths[0], user_id=TEST_USER_ID,
-                )
-                ingested_ids.append(item_id)
+            async def _ingest_one(path):
+                item_id, _ = await pipeline.ingest(path, user_id=TEST_USER_ID)
+                return item_id
+
+            tasks = [_ingest_one(paths[0]) for cat, paths in categorized_images.items()]
+            ingested_ids = await asyncio.gather(*tasks)
 
             # Search for medical items
             results = await pipeline.search(
