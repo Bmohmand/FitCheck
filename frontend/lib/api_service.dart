@@ -184,4 +184,23 @@ static Future<String?> uploadImageToStorage(String imagePath) async {
     return null;
   }
 }
+static Future<List<Map<String, dynamic>>?> getManifestItems() async {
+  try {
+    final uri = Uri.parse(
+      '${dotenv.env['SUPABASE_URL']}/rest/v1/manifest_items?select=*&order=created_at.desc',
+    );
+
+    final response = await http.get(uri, headers: _supabaseHeaders);
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(json.decode(response.body));
+    } else {
+      print('Error fetching manifest items: ${response.statusCode}');
+      return null;
+    }
+  } catch (e) {
+    print('Exception fetching manifest items: $e');
+    return null;
+  }
+}
 }
