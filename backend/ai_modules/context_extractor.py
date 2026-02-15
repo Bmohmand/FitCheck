@@ -35,6 +35,7 @@ Your goal is to analyze an image of a physical object and extract highly accurat
 Analyze the image thoroughly and return ONLY a valid JSON object matching the exact schema below. Do not use markdown blocks (e.g., ```json) or add conversational filler.
 
 {
+  "name": "Specific item name (e.g. 'Gore-Tex Rain Jacket')",
   "inferred_category": "One of: clothing, medical, tech, camping, food, misc",
   "primary_material": "Dominant material (e.g., 'Gore-Tex nylon', 'stainless steel', 'cotton')",
   "weight_estimate": "One of: ultralight, light, medium, heavy",
@@ -90,12 +91,19 @@ class ContextExtractor:
                     ],
                 },
             ],
-            max_tokens=800,
+            max_completion_tokens=4000,
             reasoning_effort=REASONING_EFFORT_EXTRACTION,
             response_format={"type": "json_object"},
         )
 
-        raw = response.choices[0].message.content
+        message = response.choices[0].message
+        if getattr(message, "refusal", None):
+            raise ValueError(f"Model refused the request: {message.refusal}")
+
+        raw = message.content
+        if not raw:
+            raise ValueError("Model returned empty content (possible safety refusal or internal error)")
+
         logger.info(f"Raw extraction: {raw[:200]}...")
 
         try:

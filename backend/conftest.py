@@ -11,10 +11,15 @@ try:
     from dotenv import load_dotenv
 
     _env_path = Path(__file__).resolve().parent / ".env"
+    _root_env_path = Path(__file__).resolve().parent.parent / ".env"
+
     if _env_path.exists():
         load_dotenv(_env_path, override=False)
+    elif _root_env_path.exists():
+        load_dotenv(_root_env_path, override=False)
+
 except ImportError:
-    pass  # python-dotenv not installed; rely on manually-exported env vars
+    print("Warning: python-dotenv not installed. .env files will not be loaded.")
 
 
 def pytest_addoption(parser):

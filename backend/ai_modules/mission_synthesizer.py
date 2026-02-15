@@ -113,7 +113,7 @@ class MissionSynthesizer:
         response = await self.client.chat.completions.create(
             model=SYNTHESIS_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=SYNTHESIS_MAX_TOKENS,
+            max_completion_tokens=SYNTHESIS_MAX_TOKENS,
             reasoning_effort=REASONING_EFFORT_SYNTHESIS,
             response_format={"type": "json_object"},
         )
