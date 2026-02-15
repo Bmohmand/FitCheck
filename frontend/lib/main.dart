@@ -88,7 +88,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       message = '✅ Connected: Supabase & Backend';
       color = const Color(0xFF10B981); // Green
     } else if (supabaseOk && !backendOk) {
-      message = '⚠️ Supabase: ✅ | Backend: ❌ (Update URL in api_service.dart)';
+      message = '⚠️ Supabase: ✅ | Backend: ❌ (Check .env API_BASE_URL & ensure backend is running)';
       color = const Color(0xFFF59E0B); // Orange
     } else if (!supabaseOk && backendOk) {
       message = '⚠️ Supabase: ❌ | Backend: ✅';
@@ -176,7 +176,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Backend: ${backendOk ? "Connected" : "Update URL in api_service.dart"}',
+                    'Backend: ${backendOk ? "Connected" : "Check .env API_BASE_URL & ensure backend is running"}',
                     style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
                   ),
                 ],
@@ -591,9 +591,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
-        title: const Text(
-          'Search Results',
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          '${results.length} Results',
+          style: const TextStyle(color: Colors.white),
         ),
         content: SizedBox(
           width: double.maxFinite,
@@ -602,11 +602,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             itemCount: results.length,
             itemBuilder: (context, index) {
               final item = results[index];
+              final imageUrl = item['image_url'] as String?;
               return Card(
                 color: const Color(0xFF334155),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
-                  leading: const Icon(Icons.check_circle, color: Color(0xFF10B981)),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: (imageUrl != null && imageUrl.isNotEmpty)
+                          ? Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.check_circle,
+                                color: Color(0xFF10B981),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.check_circle,
+                              color: Color(0xFF10B981),
+                            ),
+                    ),
+                  ),
                   title: Text(
                     item['name'] ?? 'Item ${index + 1}',
                     style: const TextStyle(color: Colors.white),
@@ -835,9 +855,54 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
 
-// Items Grid View
-class ItemsGridView extends StatelessWidget {
+// Items Grid View — fetches real data from backend / Supabase
+class ItemsGridView extends StatefulWidget {
   const ItemsGridView({super.key});
+
+  @override
+  State<ItemsGridView> createState() => _ItemsGridViewState();
+}
+
+class _ItemsGridViewState extends State<ItemsGridView> {
+  List<Map<String, dynamic>> _items = [];
+  int _itemCount = 0;
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchItems();
+  }
+
+  Future<void> _fetchItems() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final result = await NexusApiService.getItems(limit: 100);
+      if (result != null) {
+        final itemsList = result['items'] as List<dynamic>? ?? [];
+        setState(() {
+          _items = List<Map<String, dynamic>>.from(itemsList);
+          _itemCount = result['count'] as int? ?? _items.length;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _error = 'Failed to load items';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Error: $e';
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -848,10 +913,10 @@ class ItemsGridView extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'Your Collection',
                     style: TextStyle(
                       fontSize: 20,
@@ -859,71 +924,136 @@ class ItemsGridView extends StatelessWidget {
                       color: Colors.white,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
-                    '48 items indexed',
-                    style: TextStyle(
+                    _isLoading
+                        ? 'Loading...'
+                        : '$_itemCount items indexed',
+                    style: const TextStyle(
                       color: Color(0xFF64748B),
                       fontSize: 14,
                     ),
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.filter_list, size: 16, color: Color(0xFF6366F1)),
-                    SizedBox(width: 6),
-                    Text(
-                      'Filter',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
+              Row(
+                children: [
+                  // Refresh button
+                  GestureDetector(
+                    onTap: _fetchItems,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(Icons.refresh, size: 16, color: Color(0xFF6366F1)),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.filter_list, size: 16, color: Color(0xFF6366F1)),
+                        SizedBox(width: 6),
+                        Text(
+                          'Filter',
+                          style: TextStyle(color: Colors.white, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
         Expanded(
-          child: _buildItemsGrid(),
+          child: _buildContent(),
         ),
       ],
     );
   }
 
-  Widget _buildItemsGrid() {
-    // Sample data - replace with actual API data
-    final items = List.generate(
-      12,
-      (index) => {
-        'name': _getItemName(index),
-        'category': _getCategory(index),
-        'similarity': (85 + (index * 2)) % 100,
-      },
-    );
+  Widget _buildContent() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+      );
+    }
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(20),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 0.85,
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Color(0xFFEF4444), size: 48),
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _fetchItems,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_items.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.inventory_2_outlined, color: Color(0xFF64748B), size: 48),
+            SizedBox(height: 12),
+            Text(
+              'No items yet',
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 16),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Scan items using the camera to add them',
+              style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _fetchItems,
+      color: const Color(0xFF6366F1),
+      child: GridView.builder(
+        padding: const EdgeInsets.all(20),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 0.85,
+        ),
+        itemCount: _items.length,
+        itemBuilder: (context, index) {
+          return _buildItemCard(_items[index]);
+        },
       ),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return _buildItemCard(item);
-      },
     );
   }
 
   Widget _buildItemCard(Map<String, dynamic> item) {
+    final imageUrl = item['image_url'] as String?;
+    final name = item['name'] as String? ?? 'Unknown Item';
+    final category = item['category'] as String? ?? 'misc';
+
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
@@ -938,19 +1068,51 @@ class ItemsGridView extends StatelessWidget {
         children: [
           Expanded(
             child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF334155),
-                borderRadius: const BorderRadius.only(
+              decoration: const BoxDecoration(
+                color: Color(0xFF334155),
+                borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(16),
                   topRight: Radius.circular(16),
                 ),
               ),
-              child: Center(
-                child: Icon(
-                  _getCategoryIcon(item['category'] as String),
-                  size: 48,
-                  color: const Color(0xFF6366F1),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
                 ),
+                child: (imageUrl != null && imageUrl.isNotEmpty)
+                    ? Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: progress.expectedTotalBytes != null
+                                  ? progress.cumulativeBytesLoaded /
+                                      progress.expectedTotalBytes!
+                                  : null,
+                              strokeWidth: 2,
+                              color: const Color(0xFF6366F1),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stack) => Center(
+                          child: Icon(
+                            _getCategoryIcon(category),
+                            size: 48,
+                            color: const Color(0xFF6366F1),
+                          ),
+                        ),
+                      )
+                    : Center(
+                        child: Icon(
+                          _getCategoryIcon(category),
+                          size: 48,
+                          color: const Color(0xFF6366F1),
+                        ),
+                      ),
               ),
             ),
           ),
@@ -960,7 +1122,7 @@ class ItemsGridView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item['name'] as String,
+                  name,
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -979,7 +1141,7 @@ class ItemsGridView extends StatelessWidget {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        item['category'] as String,
+                        category,
                         style: const TextStyle(
                           color: Color(0xFF6366F1),
                           fontSize: 10,
@@ -997,50 +1159,19 @@ class ItemsGridView extends StatelessWidget {
     );
   }
 
-  String _getItemName(int index) {
-    final names = [
-      'Wool Trench Coat',
-      'First Aid Kit',
-      'LED Flashlight',
-      'Thermal Blanket',
-      'Gore-Tex Jacket',
-      'Antibiotics',
-      'Camp Stove',
-      'Water Filter',
-      'Trauma Kit',
-      'Sleeping Bag',
-      'Gauze Pack',
-      'Multi-tool',
-    ];
-    return names[index % names.length];
-  }
-
-  String _getCategory(int index) {
-    final categories = [
-      'Clothing',
-      'Medical',
-      'Survival',
-      'Medical',
-      'Clothing',
-      'Medical',
-      'Survival',
-      'Survival',
-      'Medical',
-      'Survival',
-      'Medical',
-      'Survival',
-    ];
-    return categories[index % categories.length];
-  }
-
   IconData _getCategoryIcon(String category) {
-    switch (category) {
-      case 'Clothing':
+    switch (category.toLowerCase()) {
+      case 'clothing':
         return Icons.checkroom;
-      case 'Medical':
+      case 'medical':
         return Icons.medical_services_outlined;
-      case 'Survival':
+      case 'survival':
+      case 'camping':
         return Icons.outdoor_grill_outlined;
+      case 'tech':
+        return Icons.devices_outlined;
+      case 'food':
+        return Icons.restaurant_outlined;
       default:
         return Icons.category;
     }
@@ -1390,9 +1521,8 @@ class _CameraIngestViewState extends State<CameraIngestView> {
 
       // Step 2: Send image URL to backend for AI processing
       final result = await NexusApiService.ingestImage(
-  imageUrl: imageUrl,  // Changed from imagePath to imageUrl
-  userId: 'demo_user',
-);
+        imageUrl: imageUrl,
+      );
 
       if (mounted) {
         setState(() {
