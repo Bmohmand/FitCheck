@@ -893,9 +893,16 @@ class ItemsGridView extends StatefulWidget {
 
 class _ItemsGridViewState extends State<ItemsGridView> {
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _filteredItems = []; // ADD THIS LINE
   int _itemCount = 0;
   bool _isLoading = true;
   String? _error;
+
+  Set<String> _selectedCategories = {};
+  Set<String> _selectedWeights = {};
+  Set<String> _selectedThermals = {};
+  Set<String> _selectedWater = {};
+  Set<String> _selectedCompressibility = {};
 
   @override
   void initState() {
@@ -904,33 +911,34 @@ class _ItemsGridViewState extends State<ItemsGridView> {
   }
 
   Future<void> _fetchItems() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  setState(() {
+    _isLoading = true;
+    _error = null;
+  });
 
-    try {
-      final result = await NexusApiService.getItems(limit: 100);
-      if (result != null) {
-        final itemsList = result['items'] as List<dynamic>? ?? [];
-        setState(() {
-          _items = List<Map<String, dynamic>>.from(itemsList);
-          _itemCount = result['count'] as int? ?? _items.length;
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _error = 'Failed to load items';
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
+  try {
+    final result = await NexusApiService.getItems(limit: 100);
+    if (result != null) {
+      final itemsList = result['items'] as List<dynamic>? ?? [];
       setState(() {
-        _error = 'Error: $e';
+        _items = List<Map<String, dynamic>>.from(itemsList);
+        _filteredItems = _items; // ADD THIS
+        _itemCount = result['count'] as int? ?? _items.length;
+        _isLoading = false;
+      });
+    } else {
+      setState(() {
+        _error = 'Failed to load items';
         _isLoading = false;
       });
     }
+  } catch (e) {
+    setState(() {
+      _error = 'Error: $e';
+      _isLoading = false;
+    });
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -954,21 +962,23 @@ class _ItemsGridViewState extends State<ItemsGridView> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _isLoading
-                        ? 'Loading...'
-                        : '$_itemCount items indexed',
-                    style: const TextStyle(
-                      color: Color(0xFF64748B),
-                      fontSize: 14,
-                    ),
-                  ),
+  _isLoading
+      ? 'Loading...'
+      : _hasActiveFilters() 
+          ? '${_filteredItems.length} of $_itemCount items'
+          : '$_itemCount items indexed',
+  style: const TextStyle(
+    color: Color(0xFF64748B),
+    fontSize: 14,
+  ),
+),
                 ],
               ),
               Row(
                 children: [
                   // Refresh button
                   GestureDetector(
-                    onTap: _fetchItems,
+                    onTap: _showFilterDialog,
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
@@ -1069,9 +1079,9 @@ class _ItemsGridViewState extends State<ItemsGridView> {
           mainAxisSpacing: 16,
           childAspectRatio: 0.85,
         ),
-        itemCount: _items.length,
+        itemCount: _filteredItems.length,
         itemBuilder: (context, index) {
-          return _buildItemCard(_items[index]);
+          return _buildItemCard(_filteredItems[index]);
         },
       ),
     );
@@ -1217,6 +1227,190 @@ class _ItemsGridViewState extends State<ItemsGridView> {
         return Icons.category;
     }
   }
+  bool _hasActiveFilters() {
+  return _selectedCategories.isNotEmpty ||
+         _selectedWeights.isNotEmpty ||
+         _selectedThermals.isNotEmpty ||
+         _selectedWater.isNotEmpty ||
+         _selectedCompressibility.isNotEmpty;
+}
+
+void _applyFilters() {
+  setState(() {
+    _filteredItems = _items.where((item) {
+      // Category filter
+      if (_selectedCategories.isNotEmpty) {
+        final category = (item['category'] ?? '').toString().toLowerCase();
+        if (!_selectedCategories.contains(category)) return false;
+      }
+      
+      // Weight filter
+      if (_selectedWeights.isNotEmpty) {
+        final weight = (item['weight_estimate'] ?? '').toString().toLowerCase();
+        if (!_selectedWeights.contains(weight)) return false;
+      }
+      
+      // Thermal filter
+      if (_selectedThermals.isNotEmpty) {
+        final thermal = (item['thermal_rating'] ?? '').toString().toLowerCase();
+        if (!_selectedThermals.contains(thermal)) return false;
+      }
+      
+      // Water resistance filter
+      if (_selectedWater.isNotEmpty) {
+        final water = (item['water_resistance'] ?? '').toString().toLowerCase();
+        if (!_selectedWater.contains(water)) return false;
+      }
+      
+      // Compressibility filter
+      if (_selectedCompressibility.isNotEmpty) {
+        final compress = (item['compressibility'] ?? '').toString().toLowerCase();
+        if (!_selectedCompressibility.contains(compress)) return false;
+      }
+      
+      return true;
+    }).toList();
+  });
+}
+
+void _showFilterDialog() {
+  showDialog(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Filter Items', style: TextStyle(color: Colors.white)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildFilterSection(
+                'Category',
+                ['clothing', 'medical', 'survival', 'tech', 'food', 'camping'],
+                _selectedCategories,
+                setDialogState,
+              ),
+              const SizedBox(height: 16),
+              _buildFilterSection(
+                'Weight',
+                ['light', 'medium', 'heavy'],
+                _selectedWeights,
+                setDialogState,
+              ),
+              const SizedBox(height: 16),
+              _buildFilterSection(
+                'Thermal Rating',
+                ['cold', 'neutral', 'warm'],
+                _selectedThermals,
+                setDialogState,
+              ),
+              const SizedBox(height: 16),
+              _buildFilterSection(
+                'Water Resistance',
+                ['water-resistant', 'waterproof', 'not water-resistant'],
+                _selectedWater,
+                setDialogState,
+              ),
+              const SizedBox(height: 16),
+              _buildFilterSection(
+                'Compressibility',
+                ['rigid', 'semi-rigid', 'flexible'],
+                _selectedCompressibility,
+                setDialogState,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _selectedCategories.clear();
+                _selectedWeights.clear();
+                _selectedThermals.clear();
+                _selectedWater.clear();
+                _selectedCompressibility.clear();
+                _filteredItems = _items;
+              });
+              Navigator.pop(context);
+            },
+            child: const Text('Clear All'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _applyFilters();
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6366F1),
+            ),
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildFilterSection(
+  String title,
+  List<String> options,
+  Set<String> selectedSet,
+  StateSetter setDialogState,
+) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: options.map((option) {
+          final isSelected = selectedSet.contains(option);
+          return FilterChip(
+            label: Text(
+              option,
+              style: TextStyle(
+                fontSize: 12,
+                color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+              ),
+            ),
+            selected: isSelected,
+            onSelected: (selected) {
+              setDialogState(() {
+                if (selected) {
+                  selectedSet.add(option);
+                } else {
+                  selectedSet.remove(option);
+                }
+              });
+            },
+            selectedColor: const Color(0xFF6366F1),
+            backgroundColor: const Color(0xFF334155),
+            side: BorderSide(
+              color: isSelected ? const Color(0xFF6366F1) : const Color(0xFF475569),
+            ),
+            showCheckmark: true,
+            checkmarkColor: Colors.white,
+          );
+        }).toList(),
+      ),
+    ],
+  );
+}
 }
 
 // Camera Ingest View
