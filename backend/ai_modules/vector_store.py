@@ -138,6 +138,10 @@ class SupabaseVectorStore:
                     semantic_tags=row.get("semantic_tags", []),
                     durability=row.get("durability"),
                     compressibility=row.get("compressibility"),
+                    environmental_suitability=row.get("environmental_suitability"),
+                    limitations_and_failure_modes=row.get("limitations_and_failure_modes"),
+                    activity_contexts=row.get("activity_contexts", []),
+                    unsuitable_contexts=row.get("unsuitable_contexts", []),
                 ),
             ))
 
