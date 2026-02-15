@@ -1617,7 +1617,7 @@ class _CameraIngestViewState extends State<CameraIngestView> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Vector embedding created and stored in Pinecone',
+              'Vector embedding created and stored in Supabase',
               style: TextStyle(
                 color: Color(0xFF94A3B8),
                 fontSize: 14,
