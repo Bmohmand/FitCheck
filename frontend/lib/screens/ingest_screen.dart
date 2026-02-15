@@ -180,7 +180,7 @@ class _IngestScreenState extends ConsumerState<IngestScreen> {
                       Text('AI is analyzing your item...'),
                     ],
                   )
-                : Padding(
+                : SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,

@@ -90,7 +90,7 @@ class ContextExtractor:
                     ],
                 },
             ],
-            max_tokens=800,
+            max_completion_tokens=800,
             reasoning_effort=REASONING_EFFORT_EXTRACTION,
             response_format={"type": "json_object"},
         )
