@@ -61,10 +61,10 @@ IMPORTANT RULES:
 class ContextExtractor:
     """Extracts structured semantic context from item images via GPT-5 Vision."""
 
-    def __init__(self, api_key: str = OPENAI_API_KEY):
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is required for context extraction")
-        self.client = AsyncOpenAI(api_key=api_key)
+    def __init__(self, api_key: str | None = None):
+        key = api_key if api_key is not None else OPENAI_API_KEY
+        self._api_key = (key or "").strip()
+        self.client = AsyncOpenAI(api_key=self._api_key) if self._api_key else None
 
     async def extract(self, image_source: str | bytes) -> ItemContext:
         """
@@ -77,6 +77,11 @@ class ContextExtractor:
         Returns:
             ItemContext with all inferred fields populated.
         """
+        if not self.client:
+            raise ValueError(
+                "OPENAI_API_KEY is required for context extraction. "
+                "Set it in backend/.env (e.g. OPENAI_API_KEY=sk-...) or in your environment."
+            )
         image_content = self._prepare_image(image_source)
 
         response = await self.client.chat.completions.create(

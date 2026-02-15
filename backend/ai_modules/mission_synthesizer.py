@@ -73,10 +73,10 @@ Respond with ONLY this JSON structure:
 class MissionSynthesizer:
     """Curates retrieved search results into an intelligent packing manifest."""
 
-    def __init__(self, api_key: str = OPENAI_API_KEY):
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is required for synthesis")
-        self.client = AsyncOpenAI(api_key=api_key)
+    def __init__(self, api_key: str | None = None):
+        key = (api_key if api_key is not None else OPENAI_API_KEY) or ""
+        self._api_key = key.strip()
+        self.client = AsyncOpenAI(api_key=self._api_key) if self._api_key else None
 
     async def synthesize(self, query: str, retrieved_items: list[RetrievedItem]) -> MissionPlan:
         """
@@ -89,6 +89,11 @@ class MissionSynthesizer:
         Returns:
             MissionPlan with selections, rejections, and reasoning
         """
+        if not self.client:
+            raise ValueError(
+                "OPENAI_API_KEY is required for mission synthesis. "
+                "Set it in backend/.env (e.g. OPENAI_API_KEY=sk-...) or in your environment."
+            )
         # Serialize retrieved items for the prompt
         items_for_prompt = []
         for item in retrieved_items:
